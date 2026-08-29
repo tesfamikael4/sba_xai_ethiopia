@@ -1,0 +1,206 @@
+# =============================================================================
+# SBA-XAI Ethiopia — pipeline configuration
+# Explainable ML with Actionable Counterfactuals for Skilled Birth Attendance
+# Study Protocol v1.2 (Aug 2026) — Kassa, Kassahun, Alene, Woldia University
+# =============================================================================
+
+project:
+  name: "sba_xai_ethiopia"
+  random_seed: 42
+
+# -----------------------------------------------------------------------------
+# Paths. glob_pattern is used because the raw archive's folder suffixes are
+# inconsistent (e.g. ETBR8ADT/ vs ETIR8ADT/ vs ETGE8AFL/), so we search by the
+# recode's file stem rather than hardcoding a folder name.
+# -----------------------------------------------------------------------------
+paths:
+  data_root: "data/raw/2024"
+  interim_dir: "data/interim"
+  processed_dir: "data/processed"
+  outputs_dir: "outputs"
+  models_dir: "outputs/models"
+  figures_dir: "outputs/figures"
+  tables_dir: "outputs/tables"
+  reports_dir: "outputs/reports"
+  log_dir: "outputs/logs"
+
+# -----------------------------------------------------------------------------
+# Recodes used (protocol section 3.1). Each entry gives a case-insensitive
+# glob (relative to paths.data_root) used to locate the .dta file, since the
+# archive nests recodes under year/recode-named subfolders.
+# -----------------------------------------------------------------------------
+datasets:
+  births_recode:
+    code: "ETBR8ADT"
+    glob: "**/ETBR8AFL.dta"
+    role: "primary — outcome (SBA) + birth-level predictors"
+  individual_recode:
+    code: "ETIR8ADT"
+    glob: "**/ETIR8AFL.dta"
+    role: "secondary — demographic/socioeconomic/WASH/media/health-access predictors"
+  geographic_data:
+    code: "ETGE8AFL"
+    glob: "**/ETGE8AFL.shp"
+    role: "cluster-to-region/zone linkage check ONLY — never facility-distance (protocol 6.4)"
+  # Explicitly out of scope (protocol 3.1) — listed here only so the loader
+  # can assert they are NOT accidentally pulled into the model:
+  excluded:
+    - "ETHR8ADT"   # Household Recode — WASH vars already complete in IR
+    - "ETKR8ADT"   # Children's Recode — wrong unit of analysis
+    - "ETMR8ADT"   # Men's Recode — out of scope
+    - "ETPR8ADT"   # Household Member Recode — out of scope
+
+# -----------------------------------------------------------------------------
+# Merge keys
+# -----------------------------------------------------------------------------
+merge:
+  birth_id_vars: ["caseid", "bidx"]      # BR row identity
+  woman_id_var: "caseid"                  # BR <-> IR merge key
+  cluster_var: "v001"                     # <-> GE DHSCLUST
+
+# -----------------------------------------------------------------------------
+# Eligibility (protocol section 4.1)
+# -----------------------------------------------------------------------------
+eligibility:
+  recency_var: "b19"           # months since birth; delivery-care module scope
+  recency_max_months: 35       # b19 <= 35, NOT the standard 5-year (59mo) window
+  fallback_recency_vars: ["b6", "b7"]   # for children who died, per protocol
+
+# -----------------------------------------------------------------------------
+# Outcome (protocol section 4.2)
+# -----------------------------------------------------------------------------
+outcome:
+  name: "sba"
+  skilled_attendant_vars: ["m3a", "m3b", "m3c", "m3d"]   # doctor/nurse/midwife/health officer
+  positive_if_any_equals: 1
+
+# -----------------------------------------------------------------------------
+# Predictors (protocol section 5). "raw" = model input. "recode" = reporting-
+# only derived variable, NEVER substituted into the model matrix.
+# -----------------------------------------------------------------------------
+predictors:
+  maternal_demographic:
+    raw: ["v012", "v106", "v511", "v218"]
+  socioeconomic:
+    raw: ["v190", "v025"]
+  health_system_access:
+    raw: ["m14", "v467d", "v481"]
+    source: ["BR", "IR"]
+  media_exposure:
+    raw: ["v157", "v158", "v159"]
+  wash:
+    raw: ["v113", "v116"]
+  household_composition:
+    raw: ["v701", "v705"]
+  geographic:
+    raw: ["v024"]          # descriptive/prevalence only, 14 categories
+    derived: ["region_stratum"]   # used for formal SHAP interaction testing
+
+  # variables explicitly excluded from the base model (protocol section 5, note)
+  excluded:
+    - "v131"    # ethnicity — not a usable field this survey round
+    - "v744a"   # wife-beating-justification items — pending co-author
+    - "v744b"   # discussion on interpretive/ethical framing
+    - "v744c"
+    - "v744d"
+    - "v744e"
+
+# -----------------------------------------------------------------------------
+# Region stratum mapping (protocol section 6.2) — collapses v024 (14 regions)
+# into 3 strata for formal SHAP interaction testing. Whole-region unions only.
+# -----------------------------------------------------------------------------
+region_stratum:
+  "Pastoralist/Arid": ["Afar", "Somali"]
+  "Agrarian Highlands": ["Amhara", "Tigray", "Oromia", "Central Ethiopia",
+                          "Sidama", "South Ethiopia", "South West Ethiopia",
+                          "Benishangul-Gumuz", "Gambella"]
+  "Urban/Peri-urban": ["Addis Ababa", "Dire Dawa", "Harari"]
+
+  small_sample_regions_flagged:  # n < 100 post-filter — interpret cautiously
+    - "Afar"
+    - "Benishangul-Gumuz"
+    - "Gambella"
+    - "Dire Dawa"
+    - "Harari"
+
+# -----------------------------------------------------------------------------
+# Reporting-only recodes (protocol section 5 table) — descriptive/policy-brief
+# use only. Kept in a separate namespace from model features on purpose.
+# -----------------------------------------------------------------------------
+reporting_recodes:
+  age_group_5yr: {source: "v012", bins: [15, 20, 25, 30, 35, 40, 45, 50]}
+  education_simple: {source: "v106", map: {0: "None", 1: "Primary", 2: "Secondary+", 3: "Secondary+"}}
+  parity_group: {source: "v218", bins: [0, 1, 3, 99], labels: ["1", "2-3", "4+"]}
+  anc_group: {source: "m14", bins: [-1, 0, 3, 99], labels: ["0", "1-3", "4+"]}
+  media_any_exposure: {source: ["v157", "v158", "v159"], rule: "any > 0"}
+  wash_improved_flag: {source: ["v113", "v116"], rule: "JMP ladder — see src/feature_engineering.py"}
+
+# -----------------------------------------------------------------------------
+# Complex survey design (protocol section 6.1)
+# -----------------------------------------------------------------------------
+survey_design:
+  weight_var: "v005"       # sample weight (÷ 1,000,000 per DHS convention)
+  weight_divisor: 1000000
+  psu_var: "v021"          # primary sampling unit / cluster
+  strata_var: "v022"       # sampling strata
+  model_fitting: "unweighted"        # standard practice for tree ensembles
+  population_estimates: "weighted"   # prevalence, weighted SHAP summaries
+
+# -----------------------------------------------------------------------------
+# Validation (protocol section 6.3)
+# -----------------------------------------------------------------------------
+validation:
+  cv_folds: 5
+  cv_group_var: "v021"                 # cluster-based CV, not row-based
+  geographic_holdout_fraction: 0.2     # held-out clusters, primary generalization test
+  metrics: ["roc_auc", "average_precision", "precision", "recall", "f1", "brier_score"]
+  equity_check_var: "v190"             # performance compared across wealth quintiles
+
+# -----------------------------------------------------------------------------
+# Model (protocol section 6.3)
+# -----------------------------------------------------------------------------
+model:
+  algorithm: "xgboost"        # "xgboost" | "lightgbm"
+  params:
+    n_estimators: 500
+    max_depth: 4
+    learning_rate: 0.03
+    subsample: 0.8
+    colsample_bytree: 0.8
+    min_child_weight: 5
+    eval_metric: "auc"
+  early_stopping_rounds: 50
+
+# -----------------------------------------------------------------------------
+# Explainability (protocol section 7)
+# -----------------------------------------------------------------------------
+xai:
+  shap:
+    explainer: "tree"
+    interaction_pairs:     # region_stratum x modifiable predictor (protocol 6.2)
+      - ["region_stratum", "m14"]      # ANC visits
+      - ["region_stratum", "v467d"]    # distance-is-a-problem
+      - ["region_stratum", "v190"]     # wealth
+      - ["region_stratum", "v157"]     # media exposure (radio)
+    partial_dependence_vars: ["m14", "v467d"]
+
+  counterfactuals:
+    engine: "dice_ml"
+    role: "supplementary sensitivity analysis — NOT a primary study contribution"
+    n_per_stratum: 3
+    mutability:
+      modifiable: ["m14", "v157", "v158", "v159", "v481"]
+      semi_modifiable: ["v467d"]
+      immutable: ["v012", "v106", "v190", "v025", "v024"]
+    validity_check: true    # report % of CFs within observed empirical covariate distribution
+
+# -----------------------------------------------------------------------------
+# Ethics / provenance (protocol section 8) — logged into every output artifact
+# -----------------------------------------------------------------------------
+provenance:
+  data_use_agreement: "DHS Program data request — approved secondary analysis of de-identified data"
+  irb: "Woldia University institutional ethics clearance"
+  causal_disclaimer: >
+    All SHAP and counterfactual outputs are model-derived associational
+    estimates from a cross-sectional, observational design — NOT causal
+    effect estimates.

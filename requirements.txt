@@ -1,0 +1,13 @@
+pandas>=2.0
+numpy>=1.24
+pyyaml>=6.0
+pyreadstat>=1.2.6        # reads DHS .dta (Stata) files with value labels
+geopandas>=0.14          # reads ETGE8AFL .shp cluster GPS file
+scikit-learn>=1.3
+xgboost>=2.0
+lightgbm>=4.1             # optional alternative to xgboost (config: model.algorithm)
+shap>=0.44
+dice-ml>=0.11
+matplotlib>=3.7
+seaborn>=0.13
+tqdm>=4.66

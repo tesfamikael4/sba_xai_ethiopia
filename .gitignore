@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.pyc
+
+# Raw DHS data is access-controlled (DHS Program data request) — never commit it
+data/raw/*
+!data/raw/.gitkeep
+data/interim/
+data/processed/
+
+outputs/models/*
+outputs/figures/*
+outputs/tables/*
+outputs/reports/*
+outputs/logs/*
+!outputs/**/.gitkeep
