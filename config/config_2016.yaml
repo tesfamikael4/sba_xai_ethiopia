@@ -1,0 +1,242 @@
+# =============================================================================
+# SBA-XAI Ethiopia — pipeline configuration: EDHS 2016 (comparison round)
+# Explainable ML with Actionable Counterfactuals for Skilled Birth Attendance
+# Same variable set / methods as config.yaml (EDHS 2024/25); this file exists
+# so the SAME pipeline (main.py) can be pointed at the 2016 round for the
+# multi-round scenario comparison in step12_scenario_comparison.py.
+#
+# Everything is identical to config.yaml except where marked "2016:" below.
+# Keep the two files in sync manually if the shared sections (predictors,
+# outcome, model, xai, ...) change — see README "Adding another survey round".
+# =============================================================================
+
+project:
+  name: "sba_xai_ethiopia"
+  random_seed: 42
+  survey_year: 2016            # 2016: tags every row so combined-round scenarios
+                                #       (step12) can tell rounds apart after concat
+
+# -----------------------------------------------------------------------------
+# Paths — 2016: separate data_root AND separate interim/processed/outputs trees
+# so a 2016 run never overwrites a 2024 run. Both rounds' processed model
+# matrices are read back together by step12_scenario_comparison.py.
+# -----------------------------------------------------------------------------
+paths:
+  data_root: "data/raw/2016"
+  interim_dir: "data/interim/2016"
+  processed_dir: "data/processed/2016"
+  outputs_dir: "outputs/by_round/2016"
+  models_dir: "outputs/by_round/2016/models"
+  figures_dir: "outputs/by_round/2016/figures"
+  tables_dir: "outputs/by_round/2016/tables"
+  reports_dir: "outputs/by_round/2016/reports"
+  log_dir: "outputs/by_round/2016/logs"
+
+# -----------------------------------------------------------------------------
+# Recodes used (protocol section 3.1) — 2016: EDHS 2016 is DHS-7 phase "71",
+# not "8A". File stems per the DHS Program file-naming convention
+# ([CC][DD][VV][FF]): ETBR71FL / ETIR71FL / ETGE71FL.
+# -----------------------------------------------------------------------------
+datasets:
+  births_recode:
+    code: "ETBR71DT"
+    glob: "**/ETBR71FL.dta"
+    role: "primary — outcome (SBA) + birth-level predictors"
+  individual_recode:
+    code: "ETIR71DT"
+    glob: "**/ETIR71FL.dta"
+    role: "secondary — demographic/socioeconomic/WASH/media/health-access predictors"
+  geographic_data:
+    code: "ETGE71FL"
+    glob: "**/ETGE71FL.shp"
+    role: "cluster-to-region/zone linkage check ONLY — never facility-distance (protocol 6.4)"
+  excluded:
+    - "ETHR71DT"
+    - "ETKR71DT"
+    - "ETMR71DT"
+    - "ETPR71DT"
+
+merge:
+  birth_id_vars: ["caseid", "bidx"]
+  woman_id_var: "caseid"
+  cluster_var: "v001"
+
+# -----------------------------------------------------------------------------
+# Eligibility (protocol section 4.1) — 2016: verify b19<=35 against the 2016
+# .DO/.FRQ before trusting this unchanged; flagged as a known assumption
+# below (some earlier DHS rounds scope the delivery-care module differently).
+# -----------------------------------------------------------------------------
+eligibility:
+  recency_var: "b19"           # 2016: VERIFY — confirm the delivery-care module
+                                # is scoped to b19<=35 in this round too, the same
+                                # way it was empirically validated for 2024/25
+                                # (protocol 4.1); do not assume it carries over.
+  recency_max_months: 35
+  fallback_recency_vars: ["b6", "b7"]
+
+outcome:
+  name: "sba"
+  skilled_attendant_vars: ["m3a", "m3b", "m3c", "m3d"]
+  positive_if_any_equals: 1
+
+# -----------------------------------------------------------------------------
+# Predictors — unchanged from config.yaml (protocol section 5), so the two
+# rounds are comparable. If a variable was coded differently in 2016 (value
+# labels, not variable names), that's a recoding concern for step05, not a
+# reason to change the feature list here.
+# -----------------------------------------------------------------------------
+predictors:
+  maternal_demographic:
+    raw: ["v012", "v106", "v511", "v218", "bord", "v212"]
+  socioeconomic:
+    raw: ["v190", "v025"]
+  health_system_access:
+    raw: ["m14", "v467b", "v467c", "v467d", "v467f", "v481"]
+    # See config.yaml — same fix, confirmed via the 2024/25 .DO file.
+    # v467a's 100% missingness in the 2016 log too is consistent with this
+    # being a genuine cross-round DHS placeholder, but v467f's behavior in
+    # a 2016 extract specifically is unverified (no 2016 .DO uploaded).
+    source: ["BR", "IR"]
+  media_exposure:
+    raw: ["v157", "v158", "v159"]
+  reproductive:
+    raw: ["m10"]
+  wash:
+    raw: ["v113", "v116"]
+  household_composition:
+    raw: ["v701", "v705", "v501"]
+  geographic:
+    raw: ["v024"]
+    derived: ["region_stratum"]
+  excluded:
+    - "v131"
+    - "v744a"
+    - "v744b"
+    - "v744c"
+    - "v744d"
+    - "v744e"
+    # See config.yaml's excluded block for the clinical-metrics rationale
+    # (BMI/gravidity/pre-eclampsia/diabetes) — same decision, both rounds.
+
+# -----------------------------------------------------------------------------
+# Region labels — 2016: EDHS 2016 predates Ethiopia's 2023 regional
+# restructuring (creation of South West Ethiopia, South Ethiopia, Central
+# Ethiopia as splits out of the former SNNPR; Sidama split out earlier, in
+# 2020). Using the 2024/25 label table on 2016 v024 codes would silently
+# mislabel every respondent from the old SNNPR. This map is a PLACEHOLDER —
+# # verify against the actual ETBR71FL.DO / .MAP file for the extract in
+# hand before trusting region_stratum results (README "Known assumptions").
+# -----------------------------------------------------------------------------
+region_labels:
+  1: "Tigray"
+  2: "Afar"
+  3: "Amhara"
+  4: "Oromia"
+  5: "Somali"
+  6: "Benishangul-Gumuz"
+  7: "SNNPR"
+  12: "Gambella"
+  13: "Harari"
+  14: "Addis Ababa"
+  15: "Dire Dawa"
+
+# -----------------------------------------------------------------------------
+# Region stratum mapping — same 3-stratum design as config.yaml (protocol
+# 6.2), but the "Agrarian Highlands" bucket lists BOTH the pre-2023 name
+# (SNNPR) and its 2024/25 successor regions, since region_stratum is a
+# whole-region union either way: whichever names are actually present in a
+# given round's v024 label set get bucketed, the rest are simply absent
+# no-ops for that round. Keeps step12's cross-round comparison on the same
+# 3 stratum categories without re-deriving the mapping per round.
+# -----------------------------------------------------------------------------
+region_stratum:
+  "Pastoralist/Arid": ["Afar", "Somali"]
+  "Agrarian Highlands": ["Amhara", "Tigray", "Oromia", "SNNPR",
+                          "Central Ethiopia", "Sidama", "South Ethiopia",
+                          "South West Ethiopia", "Benishangul-Gumuz", "Gambella"]
+  "Urban/Peri-urban": ["Addis Ababa", "Dire Dawa", "Harari"]
+
+  small_sample_regions_flagged:
+    - "Afar"
+    - "Benishangul-Gumuz"
+    - "Gambella"
+    - "Dire Dawa"
+    - "Harari"
+
+reporting_recodes:
+  age_group_5yr: {source: "v012", bins: [15, 20, 25, 30, 35, 40, 45, 50]}
+  education_simple: {source: "v106", map: {0: "None", 1: "Primary", 2: "Secondary+", 3: "Secondary+"}}
+  parity_group: {source: "v218", bins: [0, 1, 3, 99], labels: ["1", "2-3", "4+"]}
+  anc_group: {source: "m14", bins: [-1, 0, 3, 99], labels: ["0", "1-3", "4+"]}
+  media_any_exposure: {source: ["v157", "v158", "v159"], rule: "any > 0"}
+  wash_improved_flag: {source: ["v113", "v116"], rule: "JMP ladder — see src/feature_engineering.py"}
+
+survey_design:
+  weight_var: "v005"
+  weight_divisor: 1000000
+  psu_var: "v021"
+  strata_var: "v022"
+  model_fitting: "unweighted"
+  population_estimates: "weighted"
+
+validation:
+  cv_folds: 5
+  cv_group_var: "v021"
+  geographic_holdout_fraction: 0.2
+  metrics: ["roc_auc", "average_precision", "precision", "recall", "f1", "brier_score"]
+  equity_check_var: "v190"
+
+# -----------------------------------------------------------------------------
+# Model — identical algorithm/hyperparameters to config.yaml on purpose: the
+# whole point of the 2016-vs-2024 scenario comparison (step12) is to isolate
+# the effect of WHICH DATA the model sees, not to also vary the model itself.
+# -----------------------------------------------------------------------------
+model:
+  algorithm: "xgboost"
+  params:
+    n_estimators: 500
+    max_depth: 4
+    learning_rate: 0.03
+    subsample: 0.8
+    colsample_bytree: 0.8
+    min_child_weight: 5
+    eval_metric: "auc"
+  early_stopping_rounds: 50
+
+# See config.yaml for the full class_imbalance rationale — kept identical
+# across both rounds on purpose (same reason config.model is kept
+# identical: isolate the effect of the DATA in step12, not also vary the
+# imbalance-handling method).
+class_imbalance:
+  method: "class_weight"
+  smote:
+    k_neighbors: 5
+    continuous_features: ["v012", "v218", "bord", "v212", "m14"]
+
+xai:
+  shap:
+    explainer: "tree"
+    interaction_pairs:
+      - ["region_stratum", "m14"]
+      - ["region_stratum", "v467d"]
+      - ["region_stratum", "v190"]
+      - ["region_stratum", "v157"]
+    partial_dependence_vars: ["m14", "v467d"]
+
+  counterfactuals:
+    engine: "dice_ml"
+    role: "supplementary sensitivity analysis — NOT a primary study contribution"
+    n_per_stratum: 3
+    mutability:
+      modifiable: ["m14", "v157", "v158", "v159", "v481"]
+      semi_modifiable: ["v467d"]
+      immutable: ["v012", "v106", "v190", "v025", "v024"]
+    validity_check: true
+
+provenance:
+  data_use_agreement: "DHS Program data request — approved secondary analysis of de-identified data"
+  irb: "Woldia University institutional ethics clearance"
+  causal_disclaimer: >
+    All SHAP and counterfactual outputs are model-derived associational
+    estimates from a cross-sectional, observational design — NOT causal
+    effect estimates.

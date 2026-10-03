@@ -27,16 +27,50 @@ from utils import get_path, load_config, read_parquet, save_parquet, setup_logge
 
 # v024 in the DHS recode is typically an integer code with attached value
 # labels. Because we read with apply_value_formats=False in step01 (to keep
-# merges numeric-safe), region names may arrive as codes. This map is a
-# placeholder aligned to typical EDHS 2024/25 region ordering and MUST be
-# verified against the actual .DO/.MAP file for the extract in hand —
-# see README "Known assumptions to verify".
-V024_REGION_LABELS = {
-    1: "Tigray", 2: "Afar", 3: "Amhara", 4: "Oromia", 5: "Somali",
-    6: "Benishangul-Gumuz", 7: "South West Ethiopia", 8: "South Ethiopia",
-    9: "Central Ethiopia", 10: "Sidama", 11: "Gambella", 12: "Harari",
-    13: "Addis Ababa", 14: "Dire Dawa",
+# merges numeric-safe), region names may arrive as codes. EDHS 2016 and
+# EDHS 2024/25 do NOT share the same v024 code->region-name table (Ethiopia's
+# 2023 regional restructuring split the former SNNPR into South West
+# Ethiopia/South Ethiopia/Central Ethiopia, on top of the earlier 2020
+# Sidama split), so this map is now config-driven (config.region_labels /
+# config_2016.yaml's region_labels) rather than a single hardcoded constant
+# — using the wrong round's table would silently mislabel every respondent
+# from the restructured regions. This module-level dict is kept ONLY as a
+# fallback for a config that predates the region_labels key, and MUST be
+# verified against the actual .DO/.MAP file for the extract in hand — see
+# README "Known assumptions to verify".
+V024_REGION_LABELS_DEFAULT = {
+    1: "Tigray",
+    2: "Afar",
+    3: "Amhara",
+    4: "Oromia",
+    5: "Somali",
+    6: "Benishangul-Gumuz",
+    7: "Central Ethiopia",
+    8: "Sidama",
+    9: "South West Ethiopia",
+    10: "South Ethiopia",
+    12: "Gambella",
+    13: "Harari",
+    14: "Addis Ababa",
+    15: "Dire Dawa",
 }
+
+# Backward-compat alias — step02_data_merging.py imports this name directly
+# for its linkage-check sanity function. Left pointing at the 2024/25 table;
+# step02's check is confirmatory-only (logs a warning, never raises), so an
+# out-of-date default here doesn't corrupt anything downstream.
+V024_REGION_LABELS = V024_REGION_LABELS_DEFAULT
+
+
+def get_region_labels(cfg: dict) -> dict[int, str]:
+    """Round-specific v024 code -> region-name map. Prefers config.region_labels
+    (set per survey round in config.yaml / config_2016.yaml); falls back to the
+    2024/25 default table for any config written before this key existed."""
+    raw = cfg.get("region_labels")
+    if not raw:
+        return V024_REGION_LABELS_DEFAULT
+    # YAML keys come back as ints already, but guard against string keys too.
+    return {int(k): v for k, v in raw.items()}
 
 
 def build_region_stratum_lookup(cfg: dict) -> dict[str, str]:
@@ -52,12 +86,15 @@ def build_region_stratum_lookup(cfg: dict) -> dict[str, str]:
 def derive_region_stratum(df: pd.DataFrame, cfg: dict, logger) -> pd.DataFrame:
     df = df.copy()
 
+    region_labels = get_region_labels(cfg)
+
     if df["v024"].dtype.kind in "iuf":
-        region_name = df["v024"].map(V024_REGION_LABELS)
+        region_name = df["v024"].map(region_labels)
         if region_name.isna().any():
             logger.warning("Some v024 codes did not map to a region name via the "
-                            "placeholder label table — verify V024_REGION_LABELS "
-                            "against this extract's .DO/.MAP file.")
+                            "placeholder label table — verify config.region_labels "
+                            "(survey_year=%s) against this extract's .DO/.MAP file.",
+                            cfg.get("project", {}).get("survey_year", "unknown"))
     else:
         region_name = df["v024"].astype(str)
 
@@ -126,6 +163,15 @@ def main():
 
     df = derive_region_stratum(df, cfg, logger)
     df = derive_reporting_recodes(df, cfg, logger)
+
+    # Tag every row with its survey round so step12_scenario_comparison.py
+    # can tell rounds apart after concatenating 2016 + 2024/25 model matrices
+    # (e.g. for scenario 1's combined-data split and to prefix cluster ids
+    # per round, since v021 codes are reused independently by each round).
+    survey_year = cfg.get("project", {}).get("survey_year")
+    if survey_year is not None:
+        df["survey_year"] = int(survey_year)
+        logger.info("Tagged %s rows with survey_year=%s.", len(df), survey_year)
 
     save_parquet(df, interim / "featured.parquet", logger)
     logger.info("Step 5 complete.")

@@ -1,0 +1,72 @@
+{
+  "provenance": {
+    "data_use_agreement": "DHS Program data request \u2014 approved secondary analysis of de-identified data",
+    "irb": "Woldia University institutional ethics clearance",
+    "causal_disclaimer": "All SHAP and counterfactual outputs are model-derived associational estimates from a cross-sectional, observational design \u2014 NOT causal effect estimates.\n"
+  },
+  "cv_results": {
+    "cluster_cv_auc_mean": 0.8738447110566094,
+    "cluster_cv_auc_folds": [
+      0.896684175135437,
+      0.861476028923778,
+      0.855638586956522,
+      0.8847597597597598,
+      0.8706650045075501
+    ]
+  },
+  "holdout_metrics": {
+    "n_holdout": 1324,
+    "roc_auc": 0.8737146056159579,
+    "average_precision": 0.9208425074735372,
+    "precision": 0.850253807106599,
+    "recall": 0.7995226730310262,
+    "f1": 0.8241082410824109,
+    "brier_score": 0.14059001207351685
+  },
+  "dice_validity_check": {
+    "n_counterfactuals": 11,
+    "missing_value_policy": "complete_case_no_imputation"
+  },
+  "shap_top10_features": [
+    {
+      "feature": "Number of antenatal visits during pregnancy",
+      "weighted_mean_abs_shap": 0.8381309452705653
+    },
+    {
+      "feature": "Wealth index combined",
+      "weighted_mean_abs_shap": 0.6657697919982041
+    },
+    {
+      "feature": "Birth order number",
+      "weighted_mean_abs_shap": 0.2698852774899624
+    },
+    {
+      "feature": "Type of place of residence",
+      "weighted_mean_abs_shap": 0.2392305596261545
+    },
+    {
+      "feature": "Highest educational level",
+      "weighted_mean_abs_shap": 0.1833265824705646
+    },
+    {
+      "feature": "Getting medical help: distance to health facility",
+      "weighted_mean_abs_shap": 0.1730140960425485
+    },
+    {
+      "feature": "Source of drinking water",
+      "weighted_mean_abs_shap": 0.1354608235001876
+    },
+    {
+      "feature": "Covered by health insurance",
+      "weighted_mean_abs_shap": 0.130585076721586
+    },
+    {
+      "feature": "Region",
+      "weighted_mean_abs_shap": 0.1220137830233181
+    },
+    {
+      "feature": "Respondent's current age",
+      "weighted_mean_abs_shap": 0.1123806522192482
+    }
+  ]
+}

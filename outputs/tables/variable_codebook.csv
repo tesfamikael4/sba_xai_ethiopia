@@ -1,0 +1,26 @@
+code,label
+v012,Respondent's current age
+v106,Highest educational level
+v511,Age at first cohabitation
+v218,Number of living children
+bord,Birth order number
+v212,Age of respondent at 1st birth
+v190,Wealth index combined
+v025,Type of place of residence
+m14,Number of antenatal visits during pregnancy
+v467b,Getting medical help: permission to go
+v467c,Getting medical help: money needed for treatment
+v467d,Getting medical help: distance to health facility
+v467f,Getting medical help: not wanting to go alone
+v481,Covered by health insurance
+v157,Frequency of reading newspaper/magazine
+v158,Frequency of listening to radio
+v159,Frequency of watching television
+m10,Wanted pregnancy when became pregnant
+v113,Source of drinking water
+v116,Type of toilet facility
+v701,Husband/partner's education level
+v705,Husband/partner's occupation (grouped)
+v501,Current marital status
+v024,Region
+region_stratum,Region stratum (Agrarian Highlands / Pastoralist-Arid / Urban-Peri-urban)

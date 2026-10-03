@@ -59,7 +59,7 @@ def setup_logger(name: str, cfg: dict, filename: str | None = None) -> logging.L
     ch.setFormatter(fmt)
     logger.addHandler(ch)
 
-    fh = logging.FileHandler(log_dir / (filename or f"{name}.log"))
+    fh = logging.FileHandler(log_dir / (filename or f"{name}.log"), encoding="utf-8")
     fh.setFormatter(fmt)
     logger.addHandler(fh)
 

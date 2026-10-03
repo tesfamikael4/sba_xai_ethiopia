@@ -4,6 +4,7 @@ __pycache__/
 
 # Raw DHS data is access-controlled (DHS Program data request) — never commit it
 data/raw/*
+Manuscript/*
 !data/raw/.gitkeep
 data/interim/
 data/processed/

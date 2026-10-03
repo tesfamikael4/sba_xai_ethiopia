@@ -56,6 +56,13 @@ def main():
                          help="Resume from this step id (e.g. step05) through the end.")
     parser.add_argument("--only", dest="only_step", default=None,
                          help="Run only this single step id (e.g. step09).")
+    parser.add_argument("--through", dest="through_step", default=None,
+                         help="Run from the start through this step id, inclusive "
+                              "(e.g. step06 — stop after model matrix assembly, "
+                              "useful for step12_scenario_comparison.py which "
+                              "needs data/processed/model_matrix.parquet for "
+                              "each survey round but not the SHAP/DiCE/reporting "
+                              "steps run per round).")
     parser.add_argument("--list", action="store_true", help="List all steps and exit.")
     parser.add_argument("--config", default=None,
                          help="Path to an alternate config.yaml (default: config/config.yaml).")
@@ -74,15 +81,21 @@ def main():
         os.environ["SBA_XAI_CONFIG_PATH"] = args.config
 
     steps_to_run = PIPELINE
+    ids = [s[0] for s in PIPELINE]
     if args.only_step:
         steps_to_run = [s for s in PIPELINE if s[0] == args.only_step]
         if not steps_to_run:
             parser.error(f"Unknown step id '{args.only_step}'. Use --list to see valid ids.")
-    elif args.from_step:
-        ids = [s[0] for s in PIPELINE]
-        if args.from_step not in ids:
-            parser.error(f"Unknown step id '{args.from_step}'. Use --list to see valid ids.")
-        steps_to_run = PIPELINE[ids.index(args.from_step):]
+    else:
+        if args.from_step:
+            if args.from_step not in ids:
+                parser.error(f"Unknown step id '{args.from_step}'. Use --list to see valid ids.")
+            steps_to_run = steps_to_run[ids.index(args.from_step):]
+        if args.through_step:
+            if args.through_step not in ids:
+                parser.error(f"Unknown step id '{args.through_step}'. Use --list to see valid ids.")
+            keep_ids = set(ids[:ids.index(args.through_step) + 1])
+            steps_to_run = [s for s in steps_to_run if s[0] in keep_ids]
 
     t_start = time.time()
     for step_id, module_name, desc in steps_to_run:

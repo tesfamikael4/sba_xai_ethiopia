@@ -1,17 +1,29 @@
 # =============================================================================
 # SBA-XAI Ethiopia — pipeline configuration
 # Explainable ML with Actionable Counterfactuals for Skilled Birth Attendance
-# Study Protocol v1.2 (Aug 2026) — Kassa, Kassahun, Alene, Woldia University
+# Study Protocol v1.2 (Aug 2026) — Tesfaye B., Esuyawkal M., Abebaw A., Woldia University
 # =============================================================================
 
 project:
   name: "sba_xai_ethiopia"
   random_seed: 42
+  survey_year: 2024            # tags every row so combined-round scenarios
+                                # (step12_scenario_comparison.py) can tell
+                                # EDHS rounds apart after concatenation
 
 # -----------------------------------------------------------------------------
 # Paths. glob_pattern is used because the raw archive's folder suffixes are
 # inconsistent (e.g. ETBR8ADT/ vs ETIR8ADT/ vs ETGE8AFL/), so we search by the
 # recode's file stem rather than hardcoding a folder name.
+#
+# NOTE: this file's outputs/models/tables/etc. paths are UNCHANGED from the
+# original single-round layout (outputs/, not outputs/by_round/2024/) so any
+# existing local run you've already done keeps working exactly as before —
+# `python main.py` still reads/writes the same places it always has. The new
+# config_2016.yaml (added for the 2016-vs-2024 comparison) uses its own
+# outputs/by_round/2016/ tree instead, and step12_scenario_comparison.py
+# looks in both places (see its SOURCES list) rather than requiring you to
+# rerun 2024 under a new path.
 # -----------------------------------------------------------------------------
 paths:
   data_root: "data/raw/2024"
@@ -63,7 +75,7 @@ merge:
 # -----------------------------------------------------------------------------
 eligibility:
   recency_var: "b19"           # months since birth; delivery-care module scope
-  recency_max_months: 35       # b19 <= 35, NOT the standard 5-year (59mo) window
+  recency_max_months: 59      # b19 <= 59, NOT the standard 5-year (59mo) window
   fallback_recency_vars: ["b6", "b7"]   # for children who died, per protocol
 
 # -----------------------------------------------------------------------------
@@ -80,18 +92,38 @@ outcome:
 # -----------------------------------------------------------------------------
 predictors:
   maternal_demographic:
-    raw: ["v012", "v106", "v511", "v218"]
+    raw: ["v012", "v106", "v511", "v218", "bord", "v212"]
+    # bord (true birth order for THIS birth) added alongside v218 (total
+    # living children as of interview, which mixes in births after this
+    # one for a BR-level model) — protocol extension per co-author review.
+    # v212 (age at first birth) added alongside — no leakage concern
+    # (stable retrospective fact), always defined for a respondent with
+    # >=1 birth, which every row in a BR-merged sample satisfies.
   socioeconomic:
     raw: ["v190", "v025"]
   health_system_access:
-    raw: ["m14", "v467d", "v481"]
+    raw: ["m14", "v467b", "v467c", "v467d", "v467f", "v481"]
+    # RESOLVED (was "v467a-c added alongside v467d..."): the study team's
+    # own ETBR8AFL.DO confirms v467a is a legacy item never fielded in
+    # Ethiopia's EDHS 2024/25 ("NA - ..." in its own variable label) —
+    # dropped entirely, not sentinel-filled. v467b/c were never actually
+    # problematic (see step01_data_loading.py's BR_COLS comment). v467f
+    # ("not wanting to go alone") is a real 4th barrier item found in the
+    # .DO file that was missing from the original battery — added here.
     source: ["BR", "IR"]
   media_exposure:
     raw: ["v157", "v158", "v159"]
+  reproductive:
+    raw: ["m10"]
+    # m10 = wantedness of this pregnancy at conception (then/later/no
+    # more) — retrospective intent, not a post-outcome variable; shares
+    # the same births-recode module (and b19<=35 scoping) as m3a-d/m14.
   wash:
     raw: ["v113", "v116"]
   household_composition:
-    raw: ["v701", "v705"]
+    raw: ["v701", "v705", "v501"]
+    # v501 (current marital/union status) added — DHS documents this as
+    # never missing, unlike v701/v705/v511 which are conditional on it.
   geographic:
     raw: ["v024"]          # descriptive/prevalence only, 14 categories
     derived: ["region_stratum"]   # used for formal SHAP interaction testing
@@ -104,6 +136,40 @@ predictors:
     - "v744c"
     - "v744d"
     - "v744e"
+    # Clinical metrics (BMI, gravidity, pre-eclampsia, diabetes) considered
+    # and excluded, not merely omitted: (1) standard EDHS BR/IR does not
+    # carry these — they require an optional biomarker module not every
+    # DHS phase fields; (2) gravidity and delivery complications recorded
+    # near/at the birth event risk sliding into the leakage category
+    # already excluded above (protocol's post-outcome/clinical-outcome
+    # rule) unless carefully dated well before the delivery. If a future
+    # extract genuinely has a biomarker module, revisit this decision
+    # against that module's actual variable-level timing documentation
+    # rather than adding these by name here.
+
+# -----------------------------------------------------------------------------
+# Region labels — v024 code -> region name for EDHS 2024/25 (post-2023
+# regional restructuring: South West Ethiopia, South Ethiopia, Central
+# Ethiopia exist as their own regions here; they did not in 2016 — see
+# config_2016.yaml's region_labels for the earlier round).
+# # verify against ETBR8AFL.DO / .MAP before trusting for publication
+# (README "Known assumptions").
+# -----------------------------------------------------------------------------
+region_labels:
+  1: "Tigray"
+  2: "Afar"
+  3: "Amhara"
+  4: "Oromia"
+  5: "Somali"
+  6: "Benishangul-Gumuz"
+  7: "Central Ethiopia"
+  8: "Sidama"
+  9: "South West Ethiopia"
+  10: "South Ethiopia"
+  12: "Gambella"
+  13: "Harari"
+  14: "Addis Ababa"
+  15: "Dire Dawa"
 
 # -----------------------------------------------------------------------------
 # Region stratum mapping (protocol section 6.2) — collapses v024 (14 regions)
@@ -111,9 +177,9 @@ predictors:
 # -----------------------------------------------------------------------------
 region_stratum:
   "Pastoralist/Arid": ["Afar", "Somali"]
-  "Agrarian Highlands": ["Amhara", "Tigray", "Oromia", "Central Ethiopia",
-                          "Sidama", "South Ethiopia", "South West Ethiopia",
-                          "Benishangul-Gumuz", "Gambella"]
+  "Agrarian Highlands": ["Amhara", "Tigray", "Oromia", "SNNPR",
+                          "Central Ethiopia", "Sidama", "South Ethiopia",
+                          "South West Ethiopia", "Benishangul-Gumuz", "Gambella"]
   "Urban/Peri-urban": ["Addis Ababa", "Dire Dawa", "Harari"]
 
   small_sample_regions_flagged:  # n < 100 post-filter — interpret cautiously
@@ -170,6 +236,28 @@ model:
     min_child_weight: 5
     eval_metric: "auc"
   early_stopping_rounds: 50
+
+# -----------------------------------------------------------------------------
+# Class imbalance handling (see step07_model_training.py's
+# fit_with_class_weight docstring for the full reasoning per method).
+# Current observed prevalence: 2024/25 ~57%/43%, 2016 ~39%/61% — mild
+# imbalance, not severe, so don't expect either method to move results
+# dramatically; that itself is useful to confirm empirically rather than
+# assume.
+# -----------------------------------------------------------------------------
+class_imbalance:
+  method: "class_weight"      # "class_weight" (default) | "smote" | "none"
+  smote:
+    # Only used when method: "smote". k_neighbors is capped automatically
+    # to (minority class n - 1) per fold/pool if the configured value is
+    # too large for a small fold.
+    k_neighbors: 5
+    # Columns SMOTENC treats as continuous (linearly interpolated between
+    # neighbors); every other model feature is treated as categorical
+    # (kept at a real neighbor's value, never interpolated) — see
+    # _smote_resample's docstring for why this matters on this feature set
+    # specifically (majority categorical/sentinel-coded).
+    continuous_features: ["v012", "v218", "bord", "v212", "m14"]
 
 # -----------------------------------------------------------------------------
 # Explainability (protocol section 7)

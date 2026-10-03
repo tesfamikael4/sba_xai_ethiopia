@@ -17,6 +17,7 @@ rr_ reporting recodes from step05 are deliberately excluded here.
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
 
@@ -27,6 +28,7 @@ import pandas as pd
 from sklearn.model_selection import GroupKFold
 
 from utils import get_path, load_config, read_parquet, save_parquet, setup_logger
+from variable_labels import write_variable_codebook
 
 
 def get_model_feature_list(cfg: dict) -> list[str]:
@@ -81,11 +83,46 @@ def assign_geographic_holdout(df: pd.DataFrame, cfg: dict, logger, seed: int) ->
     return df
 
 
+def encode_region_stratum(model_df: pd.DataFrame, full_population: pd.DataFrame,
+                           tables_dir, logger) -> pd.DataFrame:
+    """
+    BUG FIXED (affects steps 07/08/09/10 headline numbers): region_stratum
+    used to be re-encoded to integer codes independently in FOUR different
+    places (step07's training prep_xy, step08's holdout prep_xy, step09's
+    SHAP prep_X, step10's counterfactual prep_X), each calling
+    `.astype("category").cat.codes` on whatever subset of rows it happened
+    to have (train pool, geo hold-out, a 3-row query sample, ...). This
+    "worked" only by coincidence: pandas assigns codes 0..k-1 in sorted
+    order of the categories PRESENT in that particular subset, so it only
+    matches across steps when every subset happens to contain all 3
+    strata. A hold-out split that happened to miss a stratum entirely
+    would silently give that subset a different code mapping than the one
+    the model was trained on — a silent, no-crash correctness bug, not
+    just a code-quality issue.
+
+    Fix: encode region_stratum to a fixed integer mapping exactly ONCE,
+    here, using the full population (before any train/holdout/fold split),
+    and carry that already-encoded column through every downstream step.
+    No step past this one should ever re-derive the mapping.
+    """
+    model_df = model_df.copy()
+    categories = sorted(full_population["region_stratum"].dropna().unique().tolist())
+    region_stratum_map = {c: i for i, c in enumerate(categories)}
+    model_df["region_stratum"] = model_df["region_stratum"].map(region_stratum_map)
+
+    logger.info("region_stratum encoded once (single source of truth): %s", region_stratum_map)
+    with open(tables_dir / "region_stratum_code_map.json", "w") as f:
+        json.dump(region_stratum_map, f, indent=2)
+
+    return model_df
+
+
 def main():
     cfg = load_config()
     logger = setup_logger("step06_survey_design", cfg)
     interim = get_path(cfg, "interim_dir")
     processed = get_path(cfg, "processed_dir")
+    tables_dir = get_path(cfg, "tables_dir")
 
     logger.info("=== Step 6: Survey design + model matrix assembly ===")
     df = read_parquet(interim / "featured.parquet")
@@ -104,13 +141,23 @@ def main():
     id_cols = [c for c in id_cols if c in df.columns]
 
     model_df = df[id_cols + feature_list].copy()
+    if "region_stratum" in model_df.columns:
+        model_df = encode_region_stratum(model_df, df, tables_dir, logger)
+
     logger.info("Assembled model matrix: %s rows x %s features "
                 "(reporting-only rr_ columns excluded by construction).",
                 len(model_df), len(feature_list))
 
     save_parquet(model_df, processed / "model_matrix.parquet", logger)
-    # Keep the full featured frame (incl. rr_ recodes) around for reporting/step09
+    # Keep the full featured frame (incl. rr_ recodes, TEXT region_stratum
+    # for readable reporting) around for reporting/step11 — deliberately
+    # NOT the integer-coded version.
     save_parquet(df, processed / "analytic_full.parquet", logger)
+
+    # The ONE place a DHS code and its human-readable label appear
+    # together (see variable_labels.py) — every figure/table downstream
+    # of this step shows the label only.
+    write_variable_codebook(feature_list, tables_dir, logger)
 
     logger.info("Step 6 complete. Model features: %s", feature_list)
 
