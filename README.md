@@ -4,7 +4,7 @@ Explainable Machine Learning with Actionable Counterfactuals for Skilled
 Birth Attendance in Ethiopia — a national predictive model with
 region-modified effects, built on EDHS 2024/25 data.
 
-Implements Study Protocol v1.2 (Kassa, Kassahun, Alene — Woldia
+Implements Study Protocol v1.2 (Tesfaye B. Kassa, Esuyawkal M. Kassahun, Abebaw A. Alene — Woldia
 University), targeting **BMC Medicine** (fallback: *International Journal
 for Equity in Health*).
 
